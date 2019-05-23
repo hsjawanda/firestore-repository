@@ -1,0 +1,95 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.hsjawanda.firestorerepository</groupId>
+	<artifactId>firestore-repository</artifactId>
+	<packaging>jar</packaging>
+	<version>0.1.0-SNAPSHOT</version>
+	<name>firestore-repository</name>
+	<url>http://maven.apache.org</url>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.google.cloud</groupId>
+				<artifactId>google-cloud-bom</artifactId>
+				<version>0.92.0-alpha</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+<!-- 	<repositories>
+		<repository>
+			<id>google-repository</id>
+			<name>Google Repository</name>
+			<url>https://maven.google.com/</url>
+		</repository>
+	</repositories>
+ -->
+ 
+	<properties>
+		<lombok.version>1.16.18</lombok.version>
+		<maven.compiler.source>1.8</maven.compiler.source>
+		<maven.compiler.target>1.8</maven.compiler.target>
+		<slf4j-jdk14.version>1.7.25</slf4j-jdk14.version>
+		<hsjawanda-utilities.version>0.8.0-SNAPSHOT</hsjawanda-utilities.version>
+		<appengine.api.sdk.version>1.9.71</appengine.api.sdk.version>
+		<guava.version>27.1-jre</guava.version>
+	</properties>
+
+	<dependencies>
+
+		<dependency>
+			<groupId>com.google.cloud</groupId>
+			<artifactId>google-cloud-firestore</artifactId>
+		</dependency>
+
+<!-- 		<dependency>
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-auth</artifactId>
+			<version>17.0.0</version>
+		</dependency>
+ -->
+		<dependency>
+			<groupId>com.hsjawanda.utilities</groupId>
+			<artifactId>utilities</artifactId>
+			<version>${hsjawanda-utilities.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<version>${lombok.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-jdk14</artifactId>
+			<version>${slf4j-jdk14.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>${guava.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.appengine</groupId>
+			<artifactId>appengine-api-1.0-sdk</artifactId>
+			<version>${appengine.api.sdk.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.12</version>
+			<scope>test</scope>
+		</dependency>
+
+	</dependencies>
+
+</project>
