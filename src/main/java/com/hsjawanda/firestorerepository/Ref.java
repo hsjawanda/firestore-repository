@@ -36,7 +36,7 @@ public final class Ref<T extends Firestorable> {
 	private Future<T> futureRef;
 
 	@Setter(value = AccessLevel.PRIVATE)
-	private T ref;
+	private T instance;
 
 	@Setter(value = AccessLevel.PRIVATE)
 	private FirestoreRepository<T> rep;
@@ -54,7 +54,7 @@ public final class Ref<T extends Firestorable> {
 	}
 
 	static <T extends Firestorable> Ref<T> to(T obj) {
-		return new Ref<T>().setRef(obj);
+		return new Ref<T>().setInstance(obj);
 	}
 
 	private static Logger log() {
@@ -66,16 +66,16 @@ public final class Ref<T extends Firestorable> {
 
 	@CheckForNull
 	public Optional<T> get() throws InterruptedException, ExecutionException {
-		if (null != this.ref)
-			return Optional.of(this.ref);
+		if (null != this.instance)
+			return Optional.of(this.instance);
 		else if (null != this.futureRef) {
-			this.ref = this.futureRef.get();
+			this.instance = this.futureRef.get();
 		}
 		else if (null != this.apiFutureRef) {
 			DocumentSnapshot ds = this.apiFutureRef.get();
-			this.ref = this.rep.setId(ds);
+			this.instance = this.rep.setId(ds);
 		}
-		return Optional.ofNullable(this.ref);
+		return Optional.ofNullable(FirestoreRepository.performLoadActions(this.instance));
 	}
 
 	public T getOr(T alternateValue) throws InterruptedException, ExecutionException {

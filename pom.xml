@@ -19,24 +19,16 @@
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
-
-<!-- 	<repositories>
-		<repository>
-			<id>google-repository</id>
-			<name>Google Repository</name>
-			<url>https://maven.google.com/</url>
-		</repository>
-	</repositories>
- -->
  
 	<properties>
+		<appengine.api.sdk.version>1.9.71</appengine.api.sdk.version>
+		<guava.version>27.1-jre</guava.version>
+		<hsjawanda-utilities.version>0.8.0-SNAPSHOT</hsjawanda-utilities.version>
+		<jackson.version>2.9.9</jackson.version>
 		<lombok.version>1.16.18</lombok.version>
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>
 		<slf4j-jdk14.version>1.7.25</slf4j-jdk14.version>
-		<hsjawanda-utilities.version>0.8.0-SNAPSHOT</hsjawanda-utilities.version>
-		<appengine.api.sdk.version>1.9.71</appengine.api.sdk.version>
-		<guava.version>27.1-jre</guava.version>
 	</properties>
 
 	<dependencies>
@@ -46,12 +38,6 @@
 			<artifactId>google-cloud-firestore</artifactId>
 		</dependency>
 
-<!-- 		<dependency>
-			<groupId>com.google.firebase</groupId>
-			<artifactId>firebase-auth</artifactId>
-			<version>17.0.0</version>
-		</dependency>
- -->
 		<dependency>
 			<groupId>com.hsjawanda.utilities</groupId>
 			<artifactId>utilities</artifactId>
@@ -66,11 +52,24 @@
 		</dependency>
 
 		<dependency>
-			<groupId>org.slf4j</groupId>
-			<artifactId>slf4j-jdk14</artifactId>
-			<version>${slf4j-jdk14.version}</version>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+			<version>${jackson.version}</version>
 		</dependency>
 
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<version>${jackson.version}</version>
+		</dependency>
+
+<!-- 
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-annotations</artifactId>
+			<version>${jackson.version}</version>
+		</dependency>
+ -->
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
@@ -83,6 +82,13 @@
 			<version>${appengine.api.sdk.version}</version>
 		</dependency>
 
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-jdk14</artifactId>
+			<version>${slf4j-jdk14.version}</version>
+		</dependency>
+
+		<!-- Testing dependencies -->
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>

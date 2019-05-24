@@ -31,6 +31,10 @@ import javax.annotation.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.type.MapType;
+import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.google.api.core.ApiFuture;
 import com.google.api.gax.rpc.UnavailableException;
 import com.google.appengine.api.memcache.Expiration;
@@ -73,11 +77,16 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 
 	protected static final Map<Class<?>, Field> ID_FIELDS = new HashMap<>();
 
-	private static Logger LOG;
-
 	protected static final Map<Class<?>, Method> ON_LOAD_METHODS = new HashMap<>();
 
 	protected static final Map<Class<?>, Method> ON_SAVE_METHODS = new HashMap<>();
+
+	static final MapType MAP_TYPE = TypeFactory.defaultInstance().constructMapType(LinkedHashMap.class, String.class,
+			Object.class);
+
+	static final ObjectMapper MAPR = new ObjectMapper().setSerializationInclusion(Include.NON_EMPTY);
+
+	private static Logger LOG;
 
 	private static final RetryOptions OPTS = RetryOptions.builder().debug(true).maxTries(5).initialWaitMillis(100)
 			.build();
@@ -111,6 +120,17 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		setOnLoadMethod(cls);
 	}
 
+	protected static Logger log() {
+		if (null == LOG) {
+			LOG = LoggerFactory.getLogger(FirestoreRepository.class.getName());
+		}
+		return LOG;
+	}
+
+	static <T> T fromMap(Map<String, Object> map, Class<T> cls) {
+		return MAPR.convertValue(map, cls);
+	}
+
 //	public static Map<DocumentReference, DocumentSnapshot> getSnapshots(@Nullable Iterable<DocumentReference> refs)
 //			throws GetException {
 //		if (null == refs)
@@ -138,11 +158,54 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 //		}
 //	}
 
-	protected static Logger log() {
-		if (null == LOG) {
-			LOG = LoggerFactory.getLogger(FirestoreRepository.class.getName());
+	/**
+	 * Invoke the method annotated with {@link @OnLoad} after loading {@code obj} from DS.
+	 *
+	 * @param obj the object to perform operations on after loading from DS
+	 * @return the {@code obj} itself
+	 * @throws GetException
+	 */
+	@CheckForNull
+	static <T> T performLoadActions(@Nullable T obj) throws GetException {
+		if (null != obj) {
+			Method onLoadMethod = ON_LOAD_METHODS.get(obj.getClass());
+			if (null != onLoadMethod) {
+				try {
+					onLoadMethod.setAccessible(true);
+					onLoadMethod.invoke(obj);
+				} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+					throw new GetException("Failed to invoke method marked @OnLoad", e);
+				}
+			}
 		}
-		return LOG;
+		return obj;
+	}
+
+	/**
+	 * Invoke the method annotated with {@link @OnSave} before saving {@code obj} to the DS.
+	 *
+	 * @param obj the object to perform operations on before saving to DS
+	 * @return the {@code obj} itself
+	 * @throws SaveException
+	 */
+	@CheckForNull
+	static <T> T performSaveActions(T obj) throws SaveException {
+		if (null != obj) {
+			Method onSaveMethod = ON_SAVE_METHODS.get(obj.getClass());
+			if (null != onSaveMethod) {
+				try {
+					onSaveMethod.setAccessible(true);
+					onSaveMethod.invoke(obj);
+				} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+					throw new SaveException("Failed to invoke method marked @OnSave", e);
+				}
+			}
+		}
+		return obj;
+	}
+
+	static <T> Map<String, Object> toMap(T obj) {
+		return MAPR.convertValue(obj, MAP_TYPE);
 	}
 
 	private static <T> T retry(RetryOptions opts, UnitOfWork<T> work)
@@ -296,15 +359,16 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		DocumentReference docRef = null;
 		if (null == obj || null == obj.getId()) {
 			docRef = this.collRef.document();
-			Field idField = ID_FIELDS.get(this.cls);
-			if (null != idField && null != obj) {
-				idField.setAccessible(true);
-				try {
-					idField.set(obj, docRef.getId());
-				} catch (IllegalArgumentException | IllegalAccessException e) {
-					throw new RuntimeException("Failed to set ID of object", e);
-				}
-			}
+			setId(obj, docRef.getId());
+//			Field idField = ID_FIELDS.get(this.cls);
+//			if (null != idField && null != obj) {
+//				idField.setAccessible(true);
+//				try {
+//					idField.set(obj, docRef.getId());
+//				} catch (IllegalArgumentException | IllegalAccessException e) {
+//					throw new RuntimeException("Failed to set ID of object", e);
+//				}
+//			}
 		} else {
 			docRef = this.collRef.document(obj.getId());
 		}
@@ -321,12 +385,13 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		try {
 			if (null != TX.get()) {
 				T pojo = setId(TX.get().get(ref).get());
-				return Optional.ofNullable(pojo);
+				return Optional.ofNullable(performLoadActions(pojo));
 			} else {
 				String path = ref.getPath();
 				Optional<T> obj = useCache() ? CACHE.get(path) : Optional.empty();
 				if (obj.isPresent()) {
 					log().debug("Got {} from CACHE.", path);
+					performLoadActions(obj.get());
 					return obj;
 				}
 				else {
@@ -335,7 +400,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 					}));
 					log().debug("Didn't get {} (useCache: {}) from CACHE, putting it in now.", path, useCache());
 					internalCache(pojo, false);
-					return Optional.ofNullable(pojo);
+					return Optional.ofNullable(performLoadActions(pojo));
 				}
 			}
 		} catch (Exception e) {
@@ -346,6 +411,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	@Override
 	public Map<DocumentReference, T> get(Iterable<DocumentReference> refs) throws GetException {
 		try {
+			// Load actions already performed in getUnordered()
 			Map<DocumentReference, T> interim = getUnordered(refs);
 			Map<DocumentReference, T> ordered = new LinkedHashMap<>();
 
@@ -354,16 +420,6 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		} catch (InterruptedException | ExecutionException | RuntimeException e) {
 			throw new GetException("Error getting multiple DocumentReferences: " + refs, e);
 		}
-	}
-
-	@Override
-	public Optional<T> get(String id) throws GetException {
-		return isBlank(id) ? Optional.empty() : get(docRef(id));
-	}
-
-	@Override
-	public Ref<T> getAsync(String id) {
-		return isBlank(id) ? Ref.to((T) null) : Ref.to(this.collRef.document(id).get(), this);
 	}
 
 //	@Override
@@ -419,12 +475,23 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 //	}
 
 	@Override
+	public Optional<T> get(String id) throws GetException {
+		return isBlank(id) ? Optional.empty() : get(docRef(id));
+	}
+
+	@Override
+	public Ref<T> getAsync(String id) {
+		return isBlank(id) ? Ref.to((T) null) : Ref.to(this.collRef.document(id).get(), this);
+	}
+
+	@Override
 	public List<T> getByCriteria(@Nullable Criteria criteria) throws GetException {
 		Query q = constructQuery(criteria);
 		try {
 
 			QuerySnapshot qs = null != TX.get() ? TX.get().get(q).get() : q.get().get();
-			List<T> rs = qs.getDocuments().stream().map(x -> setId(x)).collect(Collectors.toCollection(ArrayList::new));
+			List<T> rs = qs.getDocuments().stream().map(this::setId).map(FirestoreRepository::performLoadActions)
+					.collect(Collectors.toCollection(ArrayList::new));
 			if (null == TX.get()) {
 				rs.stream().forEach(x -> internalCache(x, false));
 			} else {
@@ -464,13 +531,13 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		WriteBatch batch = db().batch();
 		List<String> paths = new ArrayList<>();
 		for (T obj : objs) {
-			performSaveActions(obj);
 			DocumentReference docRef = docRef(obj);
+			Map<String, Object> map = toMap(performSaveActions(obj));
 			if (null == TX.get()) {
 				paths.add(docRef.getPath());
-				batch.set(docRef, obj);
+				batch.set(docRef, map);
 			} else {
-				TX.get().set(docRef, obj);
+				TX.get().set(docRef, map);
 			}
 		}
 		try {
@@ -482,6 +549,8 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 				if (useCache()) {
 					paths.stream().forEach(CACHE::delete);
 				}
+			} else {
+				paths.stream().forEach(CACHE::pendForDeletion);
 			}
 			return wrs;
 		} catch (InterruptedException | ExecutionException e) {
@@ -512,18 +581,18 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	public ApiFuture<WriteResult> saveAsync(@Nullable T obj) throws IllegalArgumentException, SaveException {
 		ApiFuture<WriteResult> futureWr = null;
 		if (null != obj) {
-			performSaveActions(obj);
 			DocumentReference ref = docRef(obj);
+			Map<String, Object> map = toMap(performSaveActions(obj));
 			try {
-				if (null == obj.getId()) {
-					setId(obj, ref.getId());
-				}
+//				if (null == obj.getId()) {
+//					setId(obj, ref.getId());
+//				}
 				if (null != TX.get()) {
-					TX.get().set(ref, obj);
+					TX.get().set(ref, map);
 					CACHE.pendForDeletion(ref.getPath());
 				} else {
 					futureWr = retry(OPTS, () -> {
-						return ref.set(obj);
+						return ref.set(map);
 					});
 					internalCache(obj, false);
 				}
@@ -670,7 +739,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		Map<DocumentReference, T> interim = new HashMap<>();
 		for (DocumentSnapshot snapshot : snapshots) {
 			DocumentReference ref = snapshot.getReference();
-			T obj = setId(snapshot);
+			T obj = performLoadActions(setId(snapshot));
 			interim.put(ref, obj);
 			if (null == TX.get()) {
 				internalCache(obj, true);
@@ -689,30 +758,6 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 			CACHE.put(docRef(obj).getPath(), obj, EXP, sp);
 		}
 		return obj;
-	}
-
-	private void performLoadActions(T obj) throws GetException {
-		Method onLoadMethod = ON_LOAD_METHODS.get(this.cls);
-		if (null != onLoadMethod) {
-			try {
-				onLoadMethod.setAccessible(true);
-				onLoadMethod.invoke(obj);
-			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				throw new GetException("Failed to invoke method marked @OnLoad", e);
-			}
-		}
-	}
-
-	private void performSaveActions(T obj) throws SaveException {
-		Method onSaveMethod = ON_SAVE_METHODS.get(this.cls);
-		if (null != onSaveMethod) {
-			try {
-				onSaveMethod.setAccessible(true);
-				onSaveMethod.invoke(obj);
-			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-				throw new SaveException("Failed to invoke method marked @OnSave", e);
-			}
-		}
 	}
 
 	private void removeFromCache(T obj) {
