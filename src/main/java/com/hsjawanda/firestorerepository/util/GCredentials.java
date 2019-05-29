@@ -52,7 +52,7 @@ public final class GCredentials {
 	 */
 	public static synchronized GoogleCredentials defaultServiceAc() throws IOException {
 		if (null == defSvcAc) {
-			defSvcAc = credentialsFrom(IoUtil.getResourceInputStream(GAE_DEF_SVC_AC_KEY_FILE_NAME),
+			defSvcAc = from(IoUtil.getResourceInputStream(GAE_DEF_SVC_AC_KEY_FILE_NAME),
 					Arrays.asList(GCloud.Scopes.CLOUD_PLATFORM));
 		}
 		return defSvcAc;
@@ -66,15 +66,27 @@ public final class GCredentials {
 	 * @throws IOException
 	 */
 	public static synchronized GoogleCredentials defaultServiceAc(String... scopes) throws IOException {
-		return credentialsFrom(IoUtil.getResourceInputStream(GAE_DEF_SVC_AC_KEY_FILE_NAME), Arrays.asList(scopes));
+		return from(IoUtil.getResourceInputStream(GAE_DEF_SVC_AC_KEY_FILE_NAME), Arrays.asList(scopes));
 	}
 
 	public static synchronized GoogleCredentials firestoreServiceAc() throws FileNotFoundException, IOException {
 		if (null == firestoreServiceAc) {
-			firestoreServiceAc = credentialsFrom(IoUtil.getResourceInputStream(FIREBASE_SVC_AC_KEY_FILE_NAME),
+			firestoreServiceAc = from(IoUtil.getResourceInputStream(FIREBASE_SVC_AC_KEY_FILE_NAME),
 					Arrays.asList(GCloud.Scopes.CLOUD_PLATFORM));
 		}
 		return firestoreServiceAc;
+	}
+
+	public static GoogleCredentials from(@NonNull InputStream keyFile, @Nullable Collection<String> scopes)
+			throws IOException {
+		GoogleCredentials creds = GoogleCredentials.fromStream(keyFile);
+		keyFile.close();
+		return Collections.isNotEmpty(scopes) ? creds.createScoped(scopes) : creds;
+	}
+
+	public static GoogleCredentials from(@NonNull String keyFileName, @Nullable Collection<String> scopes)
+			throws IOException {
+		return from(IoUtil.getResourceInputStream(keyFileName), scopes);
 	}
 
 	/**
@@ -92,13 +104,6 @@ public final class GCredentials {
 			log().info("Token valid upto: " + Time.TIMESTAMP.format(token.getExpirationTime().toInstant()));
 		}
 		return token;
-	}
-
-	private static GoogleCredentials credentialsFrom(@NonNull InputStream keyFile, @Nullable Collection<String> scopes)
-			throws IOException {
-		GoogleCredentials creds = GoogleCredentials.fromStream(keyFile);
-		keyFile.close();
-		return Collections.isNotEmpty(scopes) ? creds.createScoped(scopes) : creds;
 	}
 
 	private static Logger log() {
