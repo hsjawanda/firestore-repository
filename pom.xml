@@ -25,9 +25,13 @@
 		<guava.version>27.1-jre</guava.version>
 		<hsjawanda-utilities.version>0.8.0-SNAPSHOT</hsjawanda-utilities.version>
 		<jackson.version>2.9.9</jackson.version>
-		<lombok.version>1.16.18</lombok.version>
+		<junit.version>4.12</junit.version>
+		<lombok.version>1.18.8</lombok.version>
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>
+		<mockito-core.version>2.23.4</mockito-core.version>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j-jdk14.version>1.7.25</slf4j-jdk14.version>
 	</properties>
 
@@ -92,7 +96,25 @@
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
-			<version>4.12</version>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.mockito</groupId>
+			<artifactId>mockito-core</artifactId>
+			<version>${mockito-core.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.google.appengine</groupId>
+			<artifactId>appengine-testing</artifactId>
+			<version>${appengine.api.sdk.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.google.appengine</groupId>
+			<artifactId>appengine-api-stubs</artifactId>
+			<version>${appengine.api.sdk.version}</version>
 			<scope>test</scope>
 		</dependency>
 
