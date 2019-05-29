@@ -66,7 +66,7 @@ public interface Repository<T extends Firestorable> {
 //
 //	Optional<T> getRandom(Criteria criteria, String randomPoint) throws GetException;
 
-	Transaction getTx();
+	Transaction transaction();
 
 	List<WriteResult> save(@NonNull Iterable<T> objs) throws SaveException;
 
