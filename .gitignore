@@ -3,6 +3,7 @@
 *.bak
 src/main/resources/*.json
 keys.properties
+*-firebase-adminsdk-*.json
 
 # Eclipse
 .classpath

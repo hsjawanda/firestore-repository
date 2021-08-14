@@ -19,12 +19,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import javax.annotation.CheckForNull;
+import javax.annotation.Generated;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
@@ -63,17 +65,28 @@ import com.hsjawanda.firestorerepository.util.ErrorHelper;
 import com.hsjawanda.utilities.base.RetryOptions;
 import com.hsjawanda.utilities.base.UnitOfWork;
 
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.experimental.Accessors;
 
 /**
- * @author Harshdeep S Jawanda <hsjawanda@gmail.com>
+ * A repository for performing CRUD operations and querying (by {@link Criteria}) on
+ * <a href="https://firebase.google.com/docs/firestore/">Cloud Firestore</a>
+ * <a href="https://firebase.google.com/docs/firestore/data-model">documents</a>.
  *
+ * <p>
+ * All instances of {@code FirestoreRepository} are immutable and stateless (the caching &mdash; at least for now
+ * &mdash; happens externally in
+ * <a href="https://cloud.google.com/appengine/docs/standard/java/memcache/">Memcache</a>). Setting any of this
+ * repository's values creates and returns a new instance if required (i.e., if the value that the caller wants to set
+ * is different from the current value).
+ *
+ * @author Harshdeep S Jawanda <hsjawanda@gmail.com>
  */
-public class FirestoreRepository<T extends Firestorable> implements Repository<T> {
+@Accessors(chain = true, fluent = true)
+public final class FirestoreRepository<T extends Firestorable> implements Repository<T> {
 
 	public static final Cache CACHE = Cache.instance(Namespace.FIRESTORE);
-
-	protected static final Expiration EXP = Expiration.byDeltaSeconds(3600);
 
 	protected static final Map<Class<?>, Field> ID_FIELDS = new HashMap<>();
 
@@ -81,7 +94,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 
 	protected static final Map<Class<?>, Method> ON_SAVE_METHODS = new HashMap<>();
 
-	static final MapType MAP_TYPE = TypeFactory.defaultInstance().constructMapType(LinkedHashMap.class, String.class,
+	static final MapType MAP_TYPE = TypeFactory.defaultInstance().constructMapType(TreeMap.class, String.class,
 			Object.class);
 
 	static final ObjectMapper MAPR = new ObjectMapper().setSerializationInclusion(Include.NON_EMPTY);
@@ -98,26 +111,39 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		}
 	};
 
-	protected final Class<T> cls;
+	protected final Expiration expiry;
 
-	protected final CollectionReference collRef;
+	@Getter
+	private final SetPolicy cacheSetPolicy;
+
+	private final Class<T> cls;
+
+	private final CollectionReference collRef;
 
 	private final boolean useCache;
 
-	FirestoreRepository(@NonNull CollectionReference collRef, @NonNull Class<T> cls) throws IllegalArgumentException {
-		this(collRef, cls, true);
+	@Generated("SparkTools")
+	private FirestoreRepository(Builder<T> builder) {
+		this.cls = builder.cls;
+		this.collRef = builder.collRef != null ? builder.collRef : FirestoreHelper.collRef(this.cls, builder.parent);
+		this.expiry = null == builder.cacheExpiration ? Expiration.byDeltaSeconds(3600) : builder.cacheExpiration;
+		this.cacheSetPolicy = null == builder.cacheSetPolicy ?  SetPolicy.ADD_ONLY_IF_NOT_PRESENT : builder.cacheSetPolicy;
+		this.useCache = null == builder.useCache? true : builder.useCache.booleanValue();
+		setIdField(this.cls);
+		checkArgument(ID_FIELDS.containsKey(this.cls),
+				"Class %s has not annotated any String field with the @%s annotation", this.cls.getName(),
+				Id.class.getName());
+		setOnSaveMethod(this.cls);
+		setOnLoadMethod(this.cls);
 	}
 
-	FirestoreRepository(@NonNull CollectionReference collRef, @NonNull Class<T> cls, boolean useCache)
-			throws IllegalArgumentException {
-		this.collRef = collRef;
-		this.cls = cls;
-		this.useCache = useCache;
-		setIdField(cls);
-		checkArgument(ID_FIELDS.containsKey(cls), "Class %s has not annotated any String field with the @Id annotation",
-				cls.getName());
-		setOnSaveMethod(cls);
-		setOnLoadMethod(cls);
+	/**
+	 * Creates builder to build {@link FirestoreRepository}.
+	 * @return created builder
+	 */
+	@Generated("SparkTools")
+	public static <T extends Firestorable> Builder<T> builder(Class<T> cls) {
+		return new Builder<T>(cls);
 	}
 
 	protected static Logger log() {
@@ -127,36 +153,21 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		return LOG;
 	}
 
+	/**
+	 * Creates a builder to build {@link FirestoreRepository} and initialize it with the given object.
+	 *
+	 * @param firestoreRepository
+	 *            to initialize the builder with
+	 * @return created builder
+	 */
+	@Generated("SparkTools")
+	static <T extends Firestorable> Builder<T> builderFrom(FirestoreRepository<T> firestoreRepository) {
+		return new Builder<>(firestoreRepository);
+	}
+
 	static <T> T fromMap(Map<String, Object> map, Class<T> cls) {
 		return MAPR.convertValue(map, cls);
 	}
-
-//	public static Map<DocumentReference, DocumentSnapshot> getSnapshots(@Nullable Iterable<DocumentReference> refs)
-//			throws GetException {
-//		if (null == refs)
-//			return java.util.Collections.emptyMap();
-//		DocumentReference[] docRefs = Iterables.toArray(refs, DocumentReference.class);
-//		List<DocumentSnapshot> snapshots;
-//		try {
-//			snapshots = db().getAll(docRefs).get();
-//			if (snapshots.size() < docRefs.length)
-//				throw new GetException(String.format(
-//						"Number of DocumentSnapshots returned (%d) is < number of DocumentReferences (%d)",
-//						Collections.size(snapshots), docRefs.length), null);
-//			Map<DocumentReference, DocumentSnapshot> unordered = snapshots.stream()
-//					.collect(toMap(DocumentSnapshot::getReference, Function.identity()));
-//			Map<DocumentReference, DocumentSnapshot> retVal = new LinkedHashMap<>(docRefs.length * 8 / 10);
-//			for (DocumentReference ref : refs) {
-//				retVal.put(ref, unordered.get(ref));
-//			}
-//			return retVal;
-//		} catch (GetException e) {
-//			throw e;
-//		} catch (Exception e) {
-//			log().warn("Exception log:", e);
-//			throw new GetException(e.getMessage(), e);
-//		}
-//	}
 
 	/**
 	 * Invoke the method annotated with {@link @OnLoad} after loading {@code obj} from DS.
@@ -247,32 +258,38 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		}
 	}
 
-	private static void setOnLoadMethod(Class<?> cls) {
+	private static void setOnLoadMethod(Class<?> cls) throws IllegalArgumentException {
 		synchronized (ON_LOAD_METHODS) {
 			if (!ON_LOAD_METHODS.containsKey(cls)) {
 				Method[] methods = cls.getDeclaredMethods();
+				int methodsFound = 0;
 				for (int i = 0; i < methods.length; i++) {
 					if (methods[i].isAnnotationPresent(OnLoad.class) && methods[i].getParameterTypes().length == 0) {
+						methods[i].setAccessible(true);
 						ON_LOAD_METHODS.put(cls, methods[i]);
-						ON_LOAD_METHODS.get(cls).setAccessible(true);
-						break;
+						methodsFound++;
 					}
 				}
+				checkArgument(methodsFound < 2, "Found %d methods annotated with @%s.", methodsFound,
+						OnLoad.class.getSimpleName());
 			}
 		}
 	}
 
-	private static void setOnSaveMethod(Class<?> cls) {
+	private static void setOnSaveMethod(Class<?> cls) throws IllegalArgumentException {
 		synchronized (ON_SAVE_METHODS) {
 			if (!ON_SAVE_METHODS.containsKey(cls)) {
 				Method[] methods = cls.getDeclaredMethods();
+				int methodsFound = 0;
 				for (int i = 0; i < methods.length; i++) {
 					if (methods[i].isAnnotationPresent(OnSave.class) && methods[i].getParameterTypes().length == 0) {
+						methods[i].setAccessible(true);
 						ON_SAVE_METHODS.put(cls, methods[i]);
-						ON_SAVE_METHODS.get(cls).setAccessible(true);
-						break;
+						methodsFound++;
 					}
 				}
+				checkArgument(methodsFound < 2, "Found %d methods annotated with @%s.", methodsFound,
+						OnSave.class.getSimpleName());
 			}
 		}
 	}
@@ -281,7 +298,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	public void cache(Iterable<T> objs) {
 		Map<String, T> map = StreamSupport.stream(objs.spliterator(), false).collect(Collectors
 				.toMap(x -> docRef(x).getPath(), Function.identity(), (x, y) -> y, LinkedHashMap<String, T>::new));
-		CACHE.SVC.putAll(map, EXP, SetPolicy.SET_ALWAYS);
+		CACHE.SVC.putAll(map, this.expiry, SetPolicy.SET_ALWAYS);
 	}
 
 	@Override
@@ -292,6 +309,33 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	@Override
 	public T cache(T obj, boolean alwaysSet) {
 		return internalCache(obj, alwaysSet);
+	}
+
+	public Expiration cacheExpiration() {
+		return this.expiry;
+	}
+
+	/**
+	 * If {@code cacheExpiration} is {@code equal()} to the internal value, the current instance is returned unchanged,
+	 * otherwise a new instance with its cache expiry value set to {@code cacheExpiration} is created and returned.
+	 *
+	 * @param cacheExpiration the cache expiration value to set
+	 * @return {@code this} or a new instance with cache expiry set to {@code cacheExpiration}
+	 */
+	public FirestoreRepository<T> cacheExpiration(Expiration cacheExpiration) {
+		return this.expiry.equals(cacheExpiration) ? this : builderFrom(this).cacheExpiration(cacheExpiration).build();
+	}
+
+	/**
+	 * If {@code cacheSetPolicy} is {@code equal()} to the internal value, the current instance is returned unchanged,
+	 * otherwise a new instance with its cache expiry value set to {@code cacheSetPolicy} is created and returned.
+	 *
+	 * @param cacheSetPolicy the cache expiration value to set
+	 * @return {@code this} or a new instance with cache expiry set to {@code cacheSetPolicy}
+	 */
+	public FirestoreRepository<T> cacheSetPolicy(SetPolicy cacheSetPolicy) {
+		return this.cacheSetPolicy.equals(cacheSetPolicy) ? this
+				: builderFrom(this).cacheSetPolicy(cacheSetPolicy).build();
 	}
 
 	@Override
@@ -360,15 +404,6 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		if (null == obj || null == obj.getId()) {
 			docRef = this.collRef.document();
 			setId(obj, docRef.getId());
-//			Field idField = ID_FIELDS.get(this.cls);
-//			if (null != idField && null != obj) {
-//				idField.setAccessible(true);
-//				try {
-//					idField.set(obj, docRef.getId());
-//				} catch (IllegalArgumentException | IllegalAccessException e) {
-//					throw new RuntimeException("Failed to set ID of object", e);
-//				}
-//			}
 		} else {
 			docRef = this.collRef.document(obj.getId());
 		}
@@ -422,58 +457,6 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		}
 	}
 
-//	@Override
-//	public Optional<T> getRandom(Criteria criteria) throws GetException {
-//		return getRandom(criteria, null);
-//	}
-//
-//	@Override
-//	public List<T> getRandom(Criteria criteria, int numToFetch) {
-//		String rdmId = this.collRef.document().getId();
-//		if (null != this.idField) {
-//			try {
-//				Query q = constructQuery(criteria).orderBy(this.idField.getName());
-//				List<QueryDocumentSnapshot> snapshots = q.startAfter(rdmId).limit(numToFetch).get().get().getDocuments();
-//				if (Collections.isEmpty(snapshots)) {
-//					snapshots = q.endBefore(rdmId).limit(numToFetch).get().get().getDocuments();
-//				}
-//				return snapshots.stream().map(x -> setId(x)).collect(Collectors.toList());
-//			} catch (InterruptedException | ExecutionException e) {
-//				// 12/10/2018
-//				log().warn("Unexpected error. Stacktrace:", e);
-//			}
-//		}
-//		return java.util.Collections.emptyList();
-//	}
-//
-//	@Override
-//	public Optional<T> getRandom(Criteria criteria, String randomPoint) throws GetException {
-//		String rdmId = null == randomPoint ? this.collRef.document().getId() : randomPoint;
-////		log().info("rmdId: " + rdmId + " (provided: " + (null != randomPoint) + "); Class: " + this.cls.getSimpleName());
-//		int limit = 20;
-//		if (null != this.idField) {
-//			try {
-//				@SuppressWarnings("unused")
-//				int searchNum = 1;
-//				Query q = constructQuery(criteria).orderBy(this.idField.getName());
-//				List<QueryDocumentSnapshot> snapshots = q.startAfter(rdmId).limit(limit).get().get().getDocuments();
-//				if (Collections.isEmpty(snapshots)) {
-//					snapshots = q.endBefore(rdmId).limit(limit).get().get().getDocuments();
-//					searchNum++;
-//				}
-//				if (Collections.isNotEmpty(snapshots))
-////					log().info("Found question in search #" + searchNum);
-//					return Optional.ofNullable(setId(snapshots.get(RANDOMIZER.nextInt(snapshots.size()))));
-//				else {
-//					log().info("No results found.");
-//				}
-//			} catch (InterruptedException | ExecutionException e) {
-//				throw new GetException("Unexpected error", e);
-//			}
-//		}
-//		return Optional.empty();
-//	}
-
 	@Override
 	public Optional<T> get(String id) throws GetException {
 		return isBlank(id) ? Optional.empty() : get(docRef(id));
@@ -496,7 +479,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 				rs.stream().forEach(x -> internalCache(x, false));
 			} else {
 				if (useCache()) {
-					rs.stream().forEach(x -> CACHE.pendForAddition(docRef(x).getPath(), x, EXP, SetPolicy.SET_ALWAYS));
+					rs.stream().forEach(x -> CACHE.pendForAddition(docRef(x).getPath(), x, this.expiry, SetPolicy.SET_ALWAYS));
 				}
 			}
 			return rs;
@@ -520,10 +503,8 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 		}
 	}
 
-	@Override
-	@CheckForNull
-	public Transaction getTx() {
-		return TX.get();
+	public boolean inTransaction() {
+		return null != TX.get();
 	}
 
 	@Override
@@ -639,6 +620,12 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	}
 
 	@Override
+	@CheckForNull
+	public Transaction transaction() {
+		return TX.get();
+	}
+
+	@Override
 	public boolean useCache() {
 		return this.useCache;
 	}
@@ -651,7 +638,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	 */
 	@Override
 	public FirestoreRepository<T> useCache(boolean cache) {
-		return this.useCache == cache ? this : new FirestoreRepository<>(this.collRef, this.cls, this.useCache);
+		return this.useCache == cache ? this : builderFrom(this).useCache(cache).build();
 	}
 
 	@CheckForNull
@@ -745,7 +732,7 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 				internalCache(obj, true);
 			} else {
 				if (snapshot.exists() && useCache()) {
-					CACHE.pendForAddition(ref.getPath(), obj, EXP, SetPolicy.SET_ALWAYS);
+					CACHE.pendForAddition(ref.getPath(), obj, this.expiry, SetPolicy.SET_ALWAYS);
 				}
 			}
 		}
@@ -755,13 +742,72 @@ public class FirestoreRepository<T extends Firestorable> implements Repository<T
 	private T internalCache(T obj, boolean alwaysSet) {
 		if (useCache() && null != obj) {
 			SetPolicy sp = alwaysSet ? SetPolicy.SET_ALWAYS : SetPolicy.ADD_ONLY_IF_NOT_PRESENT;
-			CACHE.put(docRef(obj).getPath(), obj, EXP, sp);
+			CACHE.put(docRef(obj).getPath(), obj, this.expiry, sp);
 		}
 		return obj;
 	}
 
 	private void removeFromCache(T obj) {
 		CACHE.delete(docRef(obj).getPath());
+	}
+
+	/**
+	 * Builder to build {@link FirestoreRepository}.
+	 */
+	@Generated("SparkTools")
+	public static final class Builder<T extends Firestorable> {
+
+		private Expiration cacheExpiration;
+
+		private SetPolicy cacheSetPolicy;
+
+		private Class<T> cls;
+
+		private Boolean useCache;
+
+		private DocumentReference parent;
+
+		private CollectionReference collRef;
+
+		private Builder(Class<T> cls) {
+			this.cls = cls;
+		}
+
+		private Builder(FirestoreRepository<T> firestoreRepository) {
+			this.cacheExpiration = firestoreRepository.expiry;
+			this.cacheSetPolicy = firestoreRepository.cacheSetPolicy;
+			this.cls = firestoreRepository.cls;
+			this.useCache = firestoreRepository.useCache;
+			this.collRef = firestoreRepository.collRef;
+		}
+
+		@Nonnull
+		public FirestoreRepository<T> build() {
+			return new FirestoreRepository<T>(this);
+		}
+
+		@Nonnull
+		public Builder<T> cacheExpiration(Expiration expiry) {
+			this.cacheExpiration = expiry;
+			return this;
+		}
+
+		@Nonnull
+		public Builder<T> cacheSetPolicy(SetPolicy cacheSetPolicy) {
+			this.cacheSetPolicy = cacheSetPolicy;
+			return this;
+		}
+
+		public Builder<T> parent(DocumentReference parent) {
+			this.parent = parent;
+			return this;
+		}
+
+		@Nonnull
+		public Builder<T> useCache(boolean useCache) {
+			this.useCache = useCache;
+			return this;
+		}
 	}
 
 }
