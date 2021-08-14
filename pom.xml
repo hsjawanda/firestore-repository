@@ -25,7 +25,7 @@
 		<hsjawanda-utilities.version>0.8.0-SNAPSHOT</hsjawanda-utilities.version>
 		<jackson.version>2.9.9</jackson.version>
 		<lombok.version>1.18.20</lombok.version>
-		<junit.version>4.12</junit.version>
+		<junit.version>4.13.1</junit.version>
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>
 		<mockito-core.version>2.23.4</mockito-core.version>
