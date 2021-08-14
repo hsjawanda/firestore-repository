@@ -21,7 +21,7 @@
 
 	<properties>
 		<appengine.api.sdk.version>1.9.71</appengine.api.sdk.version>
-		<guava.version>27.1-jre</guava.version>
+		<guava.version>29.0-jre</guava.version>
 		<hsjawanda-utilities.version>0.8.0-SNAPSHOT</hsjawanda-utilities.version>
 		<jackson.version>2.9.9</jackson.version>
 		<lombok.version>1.18.20</lombok.version>
