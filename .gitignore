@@ -8,6 +8,8 @@ keys.properties
 # Eclipse
 .classpath
 .project
+.vscode
+.factorypath
 .settings/
 
 # Intellij
